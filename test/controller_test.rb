@@ -24,31 +24,25 @@ class ControllerTest < Test::Unit::TestCase
   def test_responsible_ping_ip_equals_failover_ip
     $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Failover ip")
 
-    controller = Controller.new
+    mock.instance_of(FailoverIp).current_ping { "Another ip" }
 
-    controller.failover_ip.expects(:current_ping).returns("Another ip")
-
-    assert controller.responsible?
+    assert Controller.new.responsible?
   end
 
   def test_responsible_current_ping_equals_ping_ip
     $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Ping ip")
 
-    controller = Controller.new
+    mock.instance_of(FailoverIp).current_ping { "Ping ip" }
 
-    controller.failover_ip.expects(:current_ping).returns("Ping ip")
-
-    assert controller.responsible?
+    assert Controller.new.responsible?
   end
 
   def test_not_responsible
     $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Ping ip")
 
-    controller = Controller.new
+    mock.instance_of(FailoverIp).current_ping { "Another ip" }
 
-    controller.failover_ip.expects(:current_ping).returns("Another ip")
-
-    refute controller.responsible?
+    refute Controller.new.responsible?
   end
 
   def test_next_ip  
@@ -60,48 +54,39 @@ class ControllerTest < Test::Unit::TestCase
 
     $config.ips = $config.ips.collect { |ip| Hashr.new ip }
 
-    controller = Controller.new
+    mock.instance_of(FailoverIp).current_target { "Current target" }
 
-    controller.failover_ip.expects(:current_target).returns("Current target")
+    mock(Ip).new("Another ping").mock!.up? { false }
+    mock(Ip).new("Desired ping").mock!.up? { true }
 
-    Ip.expects(:new).with("Another ping").returns mock(:up? => false)
-    Ip.expects(:new).with("Desired ping").returns mock(:up? => true)
-
-    assert_equal controller.next_ip, :ping => "Desired ping", :target => "Desired target"
+    assert_equal Controller.new.next_ip, :ping => "Desired ping", :target => "Desired target"
   end
 
   def test_switch
-    controller = Controller.new
+    mock.instance_of(Controller).next_ip.mock!.target { "Next ip" }
+    mock.instance_of(FailoverIp).switch_to("Next ip")
 
-    controller.expects :next_ip => mock(:target => "Next ip")
-    controller.failover_ip.expects(:switch_to).with("Next ip")
-
-    controller.switch
+    Controller.new.switch
   end
 
   def test_start
     $config = Hashr.new(:ping_ip => "Ping ip", :down_interval => 1)
 
-    Ip.any_instance.stubs(:down?).returns(true)
-    Controller.any_instance.stubs(:responsible?).returns(true)
+    mock.instance_of(Ip).down? { true }
+    mock.instance_of(Controller).responsible? { true }
+    mock.instance_of(Controller).switch { raise LeaveLoopException }
 
-    controller = Controller.new
-    controller.expects(:switch).then.raises(LeaveLoopException)
-
-    assert_raise(LeaveLoopException) { controller.start }
+    assert_raise(LeaveLoopException) { Controller.new.start }
   end
 
   def test_start_only_once
     $config = Hashr.new(:ping_ip => "Ping ip", :only_once => true)
 
-    Ip.expects(:new).with("Ping ip").returns mock(:down? => true)
+    mock.instance_of(Ip).down? { true }
+    mock.instance_of(Controller).responsible? { true }
+    mock.instance_of(Controller).switch { true }
 
-    controller = Controller.new
-
-    controller.expects(:responsible?).returns(true)
-    controller.expects(:switch).returns(true)
-
-    controller.start
+    Controller.new.start
   end
 end
 

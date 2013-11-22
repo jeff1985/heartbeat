@@ -5,5 +5,5 @@ gem "json"
 gem "httparty"
 gem "rake"
 gem "hashr"
-gem "mocha"
+gem "rr"
 

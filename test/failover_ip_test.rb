@@ -16,35 +16,37 @@ class FailoverIpTest < Test::Unit::TestCase
   def test_current_target
     $config = Hashr.new(:base_url => "https://base_url", :basic_auth => "Basic auth")
 
-    response = mock(:success? => true, :parsed_response => { "failover" => { "active_server_ip" => "Active server ip" }})
+    response = mock_object(:success? => true, :parsed_response => { "failover" => { "active_server_ip" => "Active server ip" }})
 
-    HTTParty.expects(:get).with("https://base_url/failover/Ip", :basic_auth => "Basic auth").returns(response)
+    mock(HTTParty).get("https://base_url/failover/Ip", :basic_auth => "Basic auth") { response }
 
     assert_equal "Active server ip", FailoverIp.new("Ip").current_target
   end
 
   def test_current_ping
-    $config = Hashr.new(:ips => [{ :ping => "Another ping", :target => "Another target" }, { :ping => "Current ping", :target => "Current target" }])
+    $config = Hashr.new(:ips => [
+      { :ping => "Another ping", :target => "Another target" },
+      { :ping => "Current ping", :target => "Current target" }
+    ])
+
     $config.ips = $config.ips.collect { |ip| Hashr.new ip }
 
-    failover_ip = FailoverIp.new("Ip")
-    failover_ip.expects(:current_target).returns("Current target")
+    mock.instance_of(FailoverIp).current_target { "Current target" }
 
-    assert_equal "Current ping", failover_ip.current_ping
+    assert_equal "Current ping", FailoverIp.new("Ip").current_ping
   end
 
   def test_switch_to
     $config = Hashr.new(:base_url => "https://base_url", :basic_auth => "Basic auth")
 
-    failover_ip = FailoverIp.new("Ip")
-    failover_ip.expects(:current_target).returns("Current target")
+    mock.instance_of(FailoverIp).current_target { "Current target" }
 
-    Hooks.expects(:run_before).with("Ip", "Current target", "Desired target")
-    Hooks.expects(:run_after).with("Ip", "Current target", "Desired target")
+    mock(Hooks).run_before("Ip", "Current target", "Desired target")
+    mock(Hooks).run_after("Ip", "Current target", "Desired target")
 
-    HTTParty.expects(:post).with("https://base_url/failover/Ip", :body => { :active_server_ip => "Desired target" }, :basic_auth => "Basic auth").returns mock(:success? => true)
+    mock(HTTParty).post("https://base_url/failover/Ip", :body => { :active_server_ip => "Desired target" }, :basic_auth => "Basic auth") { mock_object :success? => true }
 
-    failover_ip.switch_to "Desired target"
+    FailoverIp.new("Ip").switch_to "Desired target"
   end
 end
 

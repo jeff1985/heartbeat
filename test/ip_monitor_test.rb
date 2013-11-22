@@ -43,11 +43,9 @@ class IpMonitorTest < Test::Unit::TestCase
   end
 
   def test_monitor
-    ip_monitor = IpMonitor.new("8.8.8.8")
+    mock.instance_of(IpMonitor).check { raise LeaveLoopException }
 
-    ip_monitor.expects(:check).twice.returns(true).then.raises(LeaveLoopException)
-
-    assert_raise(LeaveLoopException) { ip_monitor.monitor }
+    assert_raise(LeaveLoopException) { IpMonitor.new("8.8.8.8").monitor }
   end
 end
 

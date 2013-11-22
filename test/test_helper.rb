@@ -5,13 +5,23 @@ require "test/unit"
 require "fileutils"
 require "logger"
 require "hashr"
-require "mocha/setup"
+require "rr"
 
 $logger = Logger.new(File.expand_path("../../log/test.log", __FILE__))
 
 class LeaveLoopException < Exception; end
 
 class Test::Unit::TestCase
+  def mock_object(attributes = {})
+    Object.new.tap do |object|
+      m = mock(object)
+
+      attributes.each do |key, value|
+        m.method_missing(key) { value }
+      end
+    end
+  end
+
   def assert_hooks_run(kind)
     hooks = File.expand_path("../../hooks", __FILE__)
 
