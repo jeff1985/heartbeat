@@ -64,8 +64,8 @@ class ControllerTest < Test::Unit::TestCase
 
     controller.failover_ip.expects(:current_target).returns("Current target")
 
-    Ip.expects(:new).with("Another ping").returns stub(:up? => false)
-    Ip.expects(:new).with("Desired ping").returns stub(:up? => true)
+    Ip.expects(:new).with("Another ping").returns mock(:up? => false)
+    Ip.expects(:new).with("Desired ping").returns mock(:up? => true)
 
     assert_equal controller.next_ip, :ping => "Desired ping", :target => "Desired target"
   end
@@ -73,7 +73,7 @@ class ControllerTest < Test::Unit::TestCase
   def test_switch
     controller = Controller.new
 
-    controller.expects :next_ip => stub(:target => "Next ip")
+    controller.expects :next_ip => mock(:target => "Next ip")
     controller.failover_ip.expects(:switch_to).with("Next ip")
 
     controller.switch
@@ -82,12 +82,11 @@ class ControllerTest < Test::Unit::TestCase
   def test_start
     $config = Hashr.new(:ping_ip => "Ping ip", :down_interval => 1)
 
-    Ip.expects(:new).twice.with("Ping ip").returns stub(:down? => true)
+    Ip.any_instance.stubs(:down?).returns(true)
+    Controller.any_instance.stubs(:responsible?).returns(true)
 
     controller = Controller.new
-
-    controller.expects(:responsible?).twice.returns(true)
-    controller.expects(:switch).twice.returns(true).then.raises(LeaveLoopException)
+    controller.expects(:switch).then.raises(LeaveLoopException)
 
     assert_raise(LeaveLoopException) { controller.start }
   end
@@ -95,7 +94,7 @@ class ControllerTest < Test::Unit::TestCase
   def test_start_only_once
     $config = Hashr.new(:ping_ip => "Ping ip", :only_once => true)
 
-    Ip.expects(:new).with("Ping ip").returns stub(:down? => true)
+    Ip.expects(:new).with("Ping ip").returns mock(:down? => true)
 
     controller = Controller.new
 

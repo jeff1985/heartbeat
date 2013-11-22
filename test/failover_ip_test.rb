@@ -16,7 +16,7 @@ class FailoverIpTest < Test::Unit::TestCase
   def test_current_target
     $config = Hashr.new(:base_url => "https://base_url", :basic_auth => "Basic auth")
 
-    response = stub(:success? => true, :parsed_response => { "failover" => { "active_server_ip" => "Active server ip" }})
+    response = mock(:success? => true, :parsed_response => { "failover" => { "active_server_ip" => "Active server ip" }})
 
     HTTParty.expects(:get).with("https://base_url/failover/Ip", :basic_auth => "Basic auth").returns(response)
 
@@ -42,7 +42,7 @@ class FailoverIpTest < Test::Unit::TestCase
     Hooks.expects(:run_before).with("Ip", "Current target", "Desired target")
     Hooks.expects(:run_after).with("Ip", "Current target", "Desired target")
 
-    HTTParty.expects(:post).with("https://base_url/failover/Ip", :body => { :active_server_ip => "Desired target" }, :basic_auth => "Basic auth").returns stub(:success? => true)
+    HTTParty.expects(:post).with("https://base_url/failover/Ip", :body => { :active_server_ip => "Desired target" }, :basic_auth => "Basic auth").returns mock(:success? => true)
 
     failover_ip.switch_to "Desired target"
   end
