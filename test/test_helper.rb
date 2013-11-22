@@ -2,11 +2,14 @@
 require "rubygems"
 require "bundler/setup"
 require "test/unit"
-require "mocha/setup"
 require "fileutils"
 require "logger"
+require "hashr"
+require "mocha/setup"
 
 $logger = Logger.new(File.expand_path("../../log/test.log", __FILE__))
+
+class LeaveLoopException < Exception; end
 
 class Test::Unit::TestCase
   def assert_hooks_run(kind)
@@ -49,32 +52,6 @@ EOF
       FileUtils.rm_f "/tmp/hook1.txt"
       FileUtils.rm_f "/tmp/hook2.txt"
     end
-  end
-
-  def set_current_target(options)
-    url = "#{options[:failover_ip].base_url}/failover/#{options[:failover_ip].failover_ip}"
-
-    basic_auth = { :username => "username", :password => "password" }
-
-    parsed_response = { :failover => { :active_server_ip => options[:ip] } }
-
-    response = Hashr.new(:parsed_response => parsed_response, :success => true)
-
-    HTTParty.expects(:get).at_least_once.with(url, :basic_auth => basic_auth).returns(response)
-  end
-
-  def assert_switch(options)
-    url = "#{options[:failover_ip].base_url}/failover/#{options[:failover_ip].failover_ip}"
-
-    basic_auth = { :username => "username", :password => "password" }
-
-    body = { :active_server_ip => options[:to] }
-
-    response = Hashr.new(:success => true)
-
-    HTTParty.expects(:post).with(url, :body => body, :basic_auth => basic_auth).returns(response)
-
-    yield
   end
 
   def refute(boolean)

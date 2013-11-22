@@ -2,29 +2,22 @@
 require "json"
 require "httparty"
 require "lib/hooks"
-require "hashr"
 
 class FailoverIp
-  attr_accessor :base_url, :basic_auth, :failover_ip, :ping_ip, :ips, :interval, :timeout, :tries, :force_down, :only_once
+  attr_accessor :ip
 
-  def ping(ip = ping_ip)
-    `ping -W #{timeout} -c #{tries} #{ip}`
-
-    $?.success?
-  end
-
-  def down?
-    force_down || !ping
+  def initialize(ip)
+    self.ip = ip
   end
 
   def current_target
-    response = HTTParty.get("#{base_url}/failover/#{failover_ip}", :basic_auth => basic_auth)
+    response = HTTParty.get("#{$config.base_url}/failover/#{ip}", :basic_auth => $config.basic_auth)
 
     raise unless response.success?
 
     response.parsed_response.deep_symbolize_keys[:failover][:active_server_ip]
   rescue
-    $logger.error "Unable to retrieve the active server ip."
+    $logger.error "Unable to retrieve the active server ip"
 
     nil
   end
@@ -32,94 +25,25 @@ class FailoverIp
   def current_ping
     target = current_target
 
-    res = ips.detect { |ip| ip[:target] == target }
+    res = $config.ips.detect { |ip| ip.target == target }
 
-    return res[:ping] if res
+    return res.ping if res 
 
-    nil
-  end
+    nil 
+  end 
 
-  def next_ip(target = current_target)
-    if index = ips.index { |ip| ip[:target] == target }
-      (ips.size - 1).times do |i|
-        ip = ips[(index + i + 1) % ips.size]
+  def switch_to(target)
+    $logger.info "Switching to #{target}."
 
-        return ip if ping(ip[:ping])
-      end
-    end
+    old_target = current_target
 
-    $logger.error "No more ip's available."
+    Hooks.run_before ip, old_target, target
 
-    nil
-  end
+    raise unless HTTParty.post("#{$config.base_url}/failover/#{ip}", :body => { :active_server_ip => target }, :basic_auth => $config.basic_auth).success?
 
-  def switch_ips
-    if new_ip = next_ip
-      $logger.info "Switching to #{new_ip[:target]}."
-
-      old_target = current_target
-
-      Hooks.run_before failover_ip, old_target, new_ip[:target]
-
-      raise unless HTTParty.post("#{base_url}/failover/#{failover_ip}", :body => { :active_server_ip => new_ip[:target] }, :basic_auth => basic_auth).success?
-
-      Hooks.run_after failover_ip, old_target, new_ip[:target]
-
-      return true
-    end
-
-    false
+    Hooks.run_after ip, old_target, target
   rescue
-    $logger.error "Unable to set a new active server ip."
-
-    false
-  end
-
-  def initialize(options)
-    self.base_url = options[:base_url]
-    self.basic_auth = options[:basic_auth]
-    self.failover_ip = options[:failover_ip]
-    self.ping_ip = options[:ping_ip]
-    self.ips = options[:ips]
-    self.interval = options[:interval] || 30
-    self.timeout = options[:timeout] || 10
-    self.tries = options[:tries] || 3
-    self.force_down = options[:force_down] || false
-    self.only_once = options[:only_once] || false
-  end
-
-  def responsible_for?(ip)
-    ping_ip == ip || ping_ip == failover_ip
-  end
-
-  def check
-    if down?
-      $logger.info "#{ping_ip} is down."
-
-      current = current_ping
-
-      if responsible_for?(current)
-        switch_ips
-      else
-        $logger.info "Not responsible for #{current}."
-      end
-
-      false
-    else
-      $logger.info "#{ping_ip} is up."
-
-      true
-    end
-  end
-
-  def monitor
-    loop do
-      res = check
-
-      return if only_once
-
-      res ? sleep(interval) : sleep(300)
-    end
+    $logger.error "Unable to set a new active server ip"
   end
 end
 

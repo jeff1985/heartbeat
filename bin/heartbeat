@@ -5,25 +5,34 @@ $:.unshift File.expand_path("../..", __FILE__)
 require "rubygems"
 require "bundler/setup"
 require "logger"
-require "lib/failover_ip"
+require "lib/controller"
+require "lib/heartbeat/version"
 require "optparse"
 require "yaml"
+require "hashr"
 
 options = { :config => File.expand_path("../../config/heartbeat.yml", __FILE__) }
 
 OptionParser.new do |opts|
   opts.on("--config config") { |config| options[:config] = config }
 
-  opts.on("--help") do
+  opts.on "--version" do
+    puts Heartbeat::VERSION
+
+    exit 0
+  end
+
+  opts.on "--help" do
     puts opts
 
     exit 0
   end
 end.parse!
 
-config = YAML.load(File.read(options[:config]))
+$config = Hashr.new(YAML.load(File.read(options[:config])))
+$config.ips = $config.ips.collect { |ip| Hashr.new ip }
 
 $logger = Logger.new(File.expand_path("../../log/heartbeat.log", __FILE__), 3, 10_485_760)
 
-FailoverIp.new(config.deep_symbolize_keys).monitor
+Controller.new(config).start
 

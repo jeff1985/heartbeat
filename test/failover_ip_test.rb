@@ -2,135 +2,49 @@
 $:.unshift File.expand_path("../..", __FILE__)
 
 require "test/test_helper"
-require "stringio"
 require "lib/failover_ip"
 
 class FailoverIpTest < Test::Unit::TestCase
-  def test_ping
-    assert FailoverIp.new(:ping_ip => "127.0.0.1").ping
-  end
-
-  def test_down?
-    assert FailoverIp.new(:ping_ip => "111.111.111.111").down?
-    refute FailoverIp.new(:ping_ip => "127.0.0.1").down?
-    assert FailoverIp.new(:ping_ip => "127.0.0.1", :force_down => true).down?
-  end
-
-  def test_next_ip
-    failover_ip = FailoverIp.new(:ips => [
-      { :ping => "127.0.0.1", :target => "1.1.1.1" },
-      { :ping => "127.0.0.2", :target => "2.2.2.2" },
-      { :ping => "255.0.0.1", :target => "3.3.3.3" },
-      { :ping => "127.0.0.3", :target => "4.4.4.4" }
-    ])
-
-    assert_equal({ :ping => "127.0.0.2", :target => "2.2.2.2" }, failover_ip.next_ip("1.1.1.1"))
-    assert_equal({ :ping => "127.0.0.3", :target => "4.4.4.4" }, failover_ip.next_ip("2.2.2.2"))
-    assert_equal({ :ping => "127.0.0.1", :target => "1.1.1.1" }, failover_ip.next_ip("4.4.4.4"))
-
-    failover_ip = FailoverIp.new(:ips => [
-      { :ping => "255.0.0.1", :target => "1.1.1.1" },
-      { :ping => "255.0.0.2", :target => "2.2.2.2" }
-    ])
-
-    assert_nil failover_ip.next_ip("1.1.1.1")
-    assert_nil failover_ip.next_ip("2.2.2.2")
+  def test_ip
+    assert_equal "Ip", FailoverIp.new("Ip").ip
   end
 
   def test_initialize
-    failover_ip = FailoverIp.new(:base_url => "base_url", :basic_auth => "basic_auth", :failover_ip => "failover_ip", :ping_ip => "ping_ip", :interval => 60,
-      :ips => [{ :ping => "ping1", :target => "target1" }, { :ping => "ping2", :target => "target2" }], :timeout => 5, :tries => 1)
-
-    assert_equal "base_url", failover_ip.base_url
-    assert_equal "basic_auth", failover_ip.basic_auth
-    assert_equal "failover_ip", failover_ip.failover_ip
-    assert_equal "ping_ip", failover_ip.ping_ip
-    assert_equal [{ :ping => "ping1", :target => "target1" }, { :ping => "ping2", :target => "target2" }], failover_ip.ips
-    assert_equal 60, failover_ip.interval
-    assert_equal 5, failover_ip.timeout
-    assert_equal 1, failover_ip.tries
+    # Already tested
   end
 
   def test_current_target
-    failover_ip = FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0")
+    $config = Hashr.new(:base_url => "https://base_url", :basic_auth => "Basic auth")
 
-    set_current_target :failover_ip => failover_ip, :ip => "1.1.1.1"
+    response = stub(:success? => true, :parsed_response => { "failover" => { "active_server_ip" => "Active server ip" }})
 
-    assert_equal "1.1.1.1", failover_ip.current_target
+    HTTParty.expects(:get).with("https://base_url/failover/Ip", :basic_auth => "Basic auth").returns(response)
+
+    assert_equal "Active server ip", FailoverIp.new("Ip").current_target
   end
 
   def test_current_ping
-    failover_ip = FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0",
-      :ips => [{ :ping => "1.1.1.1", :target => "2.2.2.2" }, { :ping => "3.3.3.3", :target => "4.4.4.4" }])
+    $config = Hashr.new(:ips => [{ :ping => "Another ping", :target => "Another target" }, { :ping => "Current ping", :target => "Current target" }])
+    $config.ips = $config.ips.collect { |ip| Hashr.new ip }
 
-    set_current_target :failover_ip => failover_ip, :ip => "2.2.2.2"
+    failover_ip = FailoverIp.new("Ip")
+    failover_ip.expects(:current_target).returns("Current target")
 
-    assert_equal "1.1.1.1", failover_ip.current_ping
-
-    set_current_target :failover_ip => failover_ip, :ip => "4.4.4.4"
-
-    assert_equal "3.3.3.3", failover_ip.current_ping
+    assert_equal "Current ping", failover_ip.current_ping
   end
 
-  def test_switch_ips
-    failover_ip = FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0",
-      :ips => [{ :ping => "1.1.1.1", :target => "2.2.2.2" }, { :ping => "127.0.0.1", :target => "3.3.3.3" }])
+  def test_switch_to
+    $config = Hashr.new(:base_url => "https://base_url", :basic_auth => "Basic auth")
 
-    set_current_target :failover_ip => failover_ip, :ip => "2.2.2.2"
+    failover_ip = FailoverIp.new("Ip")
+    failover_ip.expects(:current_target).returns("Current target")
 
-    assert_hooks_run "before" do
-      assert_switch(:failover_ip => failover_ip, :to => "3.3.3.3") { failover_ip.switch_ips }
-    end
+    Hooks.expects(:run_before).with("Ip", "Current target", "Desired target")
+    Hooks.expects(:run_after).with("Ip", "Current target", "Desired target")
 
-    assert_hooks_run "after" do
-      assert_switch(:failover_ip => failover_ip, :to => "3.3.3.3") { failover_ip.switch_ips }
-    end
-  end
+    HTTParty.expects(:post).with("https://base_url/failover/Ip", :body => { :active_server_ip => "Desired target" }, :basic_auth => "Basic auth").returns stub(:success? => true)
 
-  def test_check_with_failover
-    failover_ip = FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0",
-      :ping_ip => "1.1.1.1", :ips => [{ :ping => "1.1.1.1", :target => "2.2.2.2" }, { :ping => "127.0.0.1", :target => "3.3.3.3" }])
-
-    set_current_target :failover_ip => failover_ip, :ip => "2.2.2.2"
-
-    assert_switch(:failover_ip => failover_ip, :to => "3.3.3.3") { refute failover_ip.check }
-  end
-
-  def test_check_without_failover
-    failover_ip = FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0",
-      :ping_ip => "127.0.0.1", :ips => [{ :ping => "127.0.0.1", :target => "3.3.3.3" }])
-
-    assert failover_ip.check
-  end
-
-  def test_only_once
-    # If you don't run into a loop, this test passes
-
-    FailoverIp.new(:base_url => "https://robot-ws.your-server.de", :basic_auth => { :username => "username", :password => "password" }, :failover_ip => "0.0.0.0",
-      :ping_ip => "127.0.0.1", :ips => [{ :ping => "127.0.0.1", :target => "3.3.3.3" }], :only_once => true).monitor
-  end
-
-  def test_responsible_for?
-    failover_ip = FailoverIp.new(:ping_ip => "1.1.1.1", :failover_ip => "1.1.1.1")
-
-    assert failover_ip.responsible_for?("1.1.1.1")
-
-    failover_ip = FailoverIp.new(:ping_ip => "0.0.0.0", :failover_ip => "1.1.1.1")
-
-    assert failover_ip.responsible_for?("0.0.0.0")
-    refute failover_ip.responsible_for?("1.1.1.1")
-  end
-
-  def test_base_url
-    # Already tested
-  end
-
-  def test_failover_ip
-    # Already tested
-  end
-
-  def test_ips
-    # Already tested
+    failover_ip.switch_to "Desired target"
   end
 end
 
