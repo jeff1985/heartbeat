@@ -6,7 +6,7 @@ require "lib/ip_monitor"
 
 class IpMonitorTest < Test::Unit::TestCase
   def setup
-    $config = Hashr.new(:timeout => 1, :interval => 1, :down_interval => 1, :tries => 1)
+    $config = base_config
   end
 
   def test_ip
@@ -18,34 +18,37 @@ class IpMonitorTest < Test::Unit::TestCase
   end
 
   def test_check
-    assert IpMonitor.new("8.8.8.8").check
-    refute IpMonitor.new("1.1.1.1").check
+    set_up "Available ip"
+    assert IpMonitor.new("Available ip").check
+
+    set_down "Unavailable ip"
+    refute IpMonitor.new("Unavailable ip").check
 
     $config.force_down = true
 
-    refute IpMonitor.new("8.8.8.8").check
+    refute IpMonitor.new("Available ip").check
   end
 
   def test_monitor_once_up
-    $config.interval = 1
+    set_up "Available ip"
 
-    IpMonitor.new("8.8.8.8").monitor_once
+    IpMonitor.new("Available ip").monitor_once
   end
 
   def test_monitor_once_down
-    $config.down_interval = 1
-
     invoked = false
 
-    IpMonitor.new("1.1.1.1").monitor_once { invoked = true }
+    set_down "Unavailable ip"
+
+    IpMonitor.new("Unavailable ip").monitor_once { invoked = true }
 
     assert invoked
   end
 
   def test_monitor
-    mock.instance_of(IpMonitor).check { raise LeaveLoopException }
+    mock.instance_of(IpMonitor).monitor_once { raise LeaveLoopException }
 
-    assert_raise(LeaveLoopException) { IpMonitor.new("8.8.8.8").monitor }
+    assert_raise(LeaveLoopException) { IpMonitor.new("Ip").monitor }
   end
 end
 
