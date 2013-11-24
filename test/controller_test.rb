@@ -6,13 +6,13 @@ require "lib/controller"
 
 class ControllerTest < Test::Unit::TestCase
   def test_failover_ip
-    $config = Hashr.new(:failover_ip => "Failover ip")
+    $config = base_config.merge(:failover_ip => "Failover ip")
 
     assert_equal "Failover ip", Controller.new.failover_ip.ip
   end
 
   def test_ip_monitor
-    $config = Hashr.new(:ping_ip => "Ping ip")
+    $config = base_config.merge(:ping_ip => "Ping ip")
 
     assert_equal "Ping ip", Controller.new.ip_monitor.ip
   end
@@ -22,69 +22,82 @@ class ControllerTest < Test::Unit::TestCase
   end
 
   def test_responsible_ping_ip_equals_failover_ip
-    $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Failover ip")
+    $config = base_config.merge(:failover_ip => "Failover ip", :ping_ip => "Failover ip", :ips => [])
 
-    mock.instance_of(FailoverIp).current_ping { "Another ip" }
+    set_current_target "Failover ip", "Another ip"
 
     assert Controller.new.responsible?
   end
 
   def test_responsible_current_ping_equals_ping_ip
-    $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Ping ip")
+    $config = base_config.merge(:failover_ip => "Failover ip", :ping_ip => "Ping ip", :ips => [Hashr.new(:ping => "Ping ip", :target => "Ping ip")])
 
-    mock.instance_of(FailoverIp).current_ping { "Ping ip" }
+    set_current_target "Failover ip", "Ping ip"
 
     assert Controller.new.responsible?
   end
 
   def test_not_responsible
-    $config = Hashr.new(:failover_ip => "Failover ip", :ping_ip => "Ping ip")
+    $config = base_config.merge(:failover_ip => "Failover ip", :ping_ip => "Ping ip", :ips => [Hashr.new(:ping_ip => "Another ip", :target => "Another ip")])
 
-    mock.instance_of(FailoverIp).current_ping { "Another ip" }
+    set_current_target "Failover ip", "Another ip"
 
     refute Controller.new.responsible?
   end
 
   def test_next_ip  
-    $config = Hashr.new(:ips => [
-      { :ping => "Another ping", :target => "Another target" },
-      { :ping => "Desired ping", :target => "Desired target" },
-      { :ping => "Current ping", :target => "Current target" }
+    $config = base_config.merge(:failover_ip => "Failover ip", :ips => [
+      Hashr.new(:ping => "Another ping", :target => "Another target"),
+      Hashr.new(:ping => "Desired ping", :target => "Desired target"),
+      Hashr.new(:ping => "Current ping", :target => "Current target")
     ])
 
-    $config.ips = $config.ips.collect { |ip| Hashr.new ip }
+    set_current_target "Failover ip", "Current target"
 
-    mock.instance_of(FailoverIp).current_target { "Current target" }
-
-    mock(Ip).new("Another ping").mock!.up? { false }
-    mock(Ip).new("Desired ping").mock!.up? { true }
+    set_down "Another ping"
+    set_up "Desired ping"
 
     assert_equal Controller.new.next_ip, :ping => "Desired ping", :target => "Desired target"
   end
 
   def test_switch
-    mock.instance_of(Controller).next_ip.mock!.target { "Next ip" }
-    mock.instance_of(FailoverIp).switch_to("Next ip")
+    $config = base_config.merge(:failover_ip => "Failover ip", :ips => [
+      Hashr.new(:ping => "Desired ping", :target => "Desired target"),
+      Hashr.new(:ping => "Current ping", :target => "Current target")
+    ])
+
+    set_current_target "Failover ip", "Current target"
+    set_switch_target "Failover ip", "Desired target"
+
+    set_up "Desired ping"
 
     Controller.new.switch
   end
 
   def test_start
-    $config = Hashr.new(:ping_ip => "Ping ip", :down_interval => 1)
+    $config = base_config.merge(:failover_ip => "Failover ip", :ping_ip => "Failover ip", :ips => [
+      Hashr.new(:ping => "Current ping", :target => "Current target"),
+      Hashr.new(:ping => "Another ping", :target => "Another target")
+    ])
 
-    mock.instance_of(Ip).down? { true }
-    mock.instance_of(Controller).responsible? { true }
+    set_down "Failover ip"
+
     mock.instance_of(Controller).switch { raise LeaveLoopException }
 
     assert_raise(LeaveLoopException) { Controller.new.start }
   end
 
   def test_start_only_once
-    $config = Hashr.new(:ping_ip => "Ping ip", :only_once => true)
+    $config = base_config.merge(:failover_ip => "Failover ip", :ping_ip => "Current ping", :only_once => true, :ips => [
+      Hashr.new(:ping => "Current ping", :target => "Current target"),
+      Hashr.new(:ping => "Desired ping", :target => "Desired target")
+    ])
 
-    mock.instance_of(Ip).down? { true }
-    mock.instance_of(Controller).responsible? { true }
-    mock.instance_of(Controller).switch { true }
+    set_down "Current ping"
+    set_up "Desired ping"
+
+    set_current_target "Failover ip", "Current target"
+    set_switch_target "Failover ip", "Desired target"
 
     Controller.new.start
   end
