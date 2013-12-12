@@ -34,5 +34,5 @@ $config.ips = $config.ips.collect { |ip| Hashr.new ip }
 
 $logger = Logger.new(File.expand_path("../../log/heartbeat.log", __FILE__), 3, 10_485_760)
 
-Controller.new(config).start
+Controller.new.start
 
